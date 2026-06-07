@@ -9,8 +9,8 @@ def update_inventory(sender, instance, created, **kwargs):
             # Знаходимо товар на складі
             inventory = Inventory.objects.get(product=instance.product)
             # Віднімаємо кількість, яка вказана в замовленні
-            #inventory.quantity -= instance.quantity
-            #inventory.save()
+            inventory.quantity -= instance.quantity
+            inventory.save()
         except Inventory.DoesNotExist:
             # Якщо товару немає на складі, нічого не робимо
             pass
