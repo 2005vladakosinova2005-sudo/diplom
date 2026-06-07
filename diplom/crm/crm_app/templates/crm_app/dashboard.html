@@ -1,0 +1,386 @@
+{% extends "crm_app/base.html" %}
+{% block content %}
+
+<!-- 1. Статистика (Доступна всім) -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card bg-dark text-white shadow-sm">
+            <div class="card-body">
+                <h6>Вартість товарів на складі</h6>
+                <h3>{{ total_value }} грн.</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-primary text-white shadow-sm">
+            <div class="card-body">
+                <h6>Загальна сума продажів</h6>
+                <h3>{{ total_orders_sum }} грн.</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2. Навігація (Вкладки залежно від прав) -->
+<ul class="nav nav-tabs mb-4" id="crmTabs" role="tablist">
+    {% if is_manager %}
+    <li class="nav-item">
+        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#clients-tab">Клієнти</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#orders-tab">Замовлення</button>
+    </li>
+    {% endif %}
+    
+    {% if is_stafflog %}
+    <li class="nav-item">
+        <!-- Вкладка активна, якщо користувач НЕ менеджер -->
+        <button class="nav-link {% if not is_manager %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#inventory-tab">Склад</button>
+    </li>
+    {% endif %}
+</ul>
+
+<div class="tab-content shadow-sm p-3 bg-white rounded">
+    
+    {% if is_manager %}
+    <!-- ВКЛАДКА КЛІЄНТИ -->
+    <div class="tab-pane fade show active" id="clients-tab">
+        <div class="d-flex justify-content-between mb-3">
+            <h4>База клієнтів</h4>
+            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addClientModal">+ Новий клієнт</button>
+        </div>
+        <table class="table table-hover">
+            <thead><tr><th>Ім'я</th><th>Телефон</th><th>Тип</th><th>Останнє замовлення</th></tr></thead>
+            <tbody>
+                {% for client in clients %}
+                <tr>
+                    <td>{{ client.name }}</td>
+                    <td>{{ client.phone }}</td>
+                    <td><span class="badge bg-secondary">{{ client.client_type }}</span></td>
+                    <td>
+                        {% with last_order=client.order_set.last %}
+                            {% if last_order %} <span class="text-primary fw-bold">ID: {{ last_order.id }}</span>
+                            {% else %} <small class="text-muted">Немає замовлень</small> {% endif %}
+                        {% endwith %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ВКЛАДКА ЗАМОВЛЕННЯ -->
+    <div class="tab-pane fade" id="orders-tab">
+        <div class="d-flex justify-content-between mb-3">
+            <h4>Історія замовлень</h4>
+            <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#addOrderModal">+ Створити замовлення</button>
+        </div>
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th>ID / Дата</th>
+                    <th>Клієнт</th>
+                    <th>Товари</th>
+                    <th>Сума</th>
+                    <th>Статус</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for order in orders %}
+                <tr>
+                    <td>
+                        <strong>#{{ order.id }}</strong><br>
+                        <small class="text-muted">{{ order.order_date|date:"d.m.Y H:i" }}</small>
+                    </td>
+                    <td>{{ order.client.name }}</td>
+                    <td>
+                        {% for item in order.orderitem_set.all %}
+                            <div class="small">• {{ item.product.name }} ({{ item.quantity }} шт.)</div>
+                        {% endfor %}
+                    </td>
+                    <td class="fw-bold text-primary">{{ order.total_amount }} грн</td>
+                    <td>
+                        <form method="POST" class="d-flex gap-1">
+                            {% csrf_token %}
+                            <input type="hidden" name="order_id" value="{{ order.id }}">
+                            <select name="new_status" class="form-select form-select-sm" style="width: 130px;">
+                                <option value="Нове" {% if order.status == "Нове" %}selected{% endif %}>Нове</option>
+                                <option value="В роботі" {% if order.status == "В роботі" %}selected{% endif %}>В роботі</option>
+                                <option value="Оплачено" {% if order.status == "Оплачено" %}selected{% endif %}>Оплачено</option>
+                                <option value="Завершено" {% if order.status == "Завершено" %}selected{% endif %}>Завершено</option>
+                                <option value="Скасовано" {% if order.status == "Скасовано" %}selected{% endif %}>Скасовано</option>
+                            </select>
+                            <button type="submit" name="update_status" class="btn btn-sm btn-outline-primary">OK</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+{% if is_stafflog %}
+<!-- ВКЛАДКА СКЛАД -->
+<div class="tab-pane fade {% if not is_manager %}show active{% endif %}" id="inventory-tab">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+
+        <h4>Залишки рослин</h4>
+
+        <div class="bg-light p-2 rounded border">
+            <form action="{% url 'export_inventory_report' %}" method="get"
+                  class="d-inline-flex align-items-center">
+
+                <span class="small me-2">Звіт за період:</span>
+
+                <input type="date" name="start_date"
+                       class="form-control form-control-sm me-1" required>
+
+                <input type="date" name="end_date"
+                       class="form-control form-control-sm me-1" required>
+
+                <button type="submit"
+                        class="btn btn-outline-success btn-sm">
+                    Згенерувати Excel
+                </button>
+            </form>
+        </div>
+
+        <button class="btn btn-success btn-sm"
+                data-bs-toggle="modal"
+                data-bs-target="#addInventoryModal">
+            + Додати на склад
+        </button>
+
+    </div>
+
+    <table class="table table-bordered">
+        <thead>
+        <tr>
+            <th>Товар</th>
+            <th>Категорія</th>
+            <th>Місце зберігання</th>
+            <th>Ціна продажу</th>   
+            <th>В наявності</th>
+            <th>Мінімум</th>
+            <th>Статус</th>
+        </tr>
+        </thead>
+
+        <tbody>
+        {% for item in inventory %}
+        <tr {% if item.quantity <= item.min_quantity %}class="table-danger"{% endif %}>
+
+            <td>{{ item.product.name }}</td>
+
+            <td>
+                <span class="badge bg-primary">
+                    {{ item.product.category }}
+                </span>
+            </td>
+
+            <td>
+                <span class="badge bg-secondary">
+                    {{ item.location }}
+                </span>
+            </td>
+
+            
+            <td>
+                <strong class="text-success">
+                    {{ item.product.price }} грн
+                </strong>
+            </td>
+
+            <td><strong>{{ item.quantity }}</strong></td>
+            <td>{{ item.min_quantity }}</td>
+
+            <td>
+                {% if item.quantity <= item.min_quantity %}
+                    <span class="badge bg-danger">МАЛО</span>
+                {% else %}
+                    <span class="badge bg-success">Норма</span>
+                {% endif %}
+            </td>
+
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+</div>
+{% endif %}
+<!-- МОДАЛЬНІ ВІКНА -->
+
+{% if is_manager %}
+<!-- НОВИЙ КЛІЄНТ -->
+<div class="modal fade" id="addClientModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST">
+                {% csrf_token %}
+                <div class="modal-header bg-primary text-white"><h5>Додати клієнта</h5></div>
+                <div class="modal-body">
+                    <input type="text" name="name" class="form-control mb-2" placeholder="ПІБ" required>
+                    <input type="text" name="phone" class="form-control mb-2" placeholder="Телефон" required>
+                    <input type="email" name="email" class="form-control mb-2" placeholder="Email">
+                    <select name="client_type" class="form-select">
+                        <option value="Роздріб">Роздріб</option>
+                        <option value="Опт">Опт</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
+                    <button type="submit" name="add_client" class="btn btn-primary">Зберегти</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- СТВОРЕННЯ ЗАМОВЛЕННЯ -->
+<div class="modal fade" id="addOrderModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="POST">
+                {% csrf_token %}
+                <div class="modal-header bg-warning"><h5>Створити замовлення</h5></div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Клієнт:</label>
+                        <select name="client_id" class="form-select" required>
+                            <option value="">Оберіть клієнта...</option>
+                            {% for client in clients %}
+                                <option value="{{ client.id }}">{{ client.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Статус:</label>
+                        <select name="status" class="form-select">
+                            <option value="Нове">Нове</option>
+                            <option value="В роботі">В роботі</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Товари:</label>
+                        <div id="products-container">
+                            <div class="row g-2 mb-2 product-row">
+                                <div class="col-md-7">
+                                    <select name="product_id[]" class="form-select product-select" required onchange="calculateOrderTotal()">
+                                        <option value="" data-price="0">Оберіть товар...</option>
+                                        {% for item in inventory %}
+                                            <option value="{{ item.product.id }}" data-price="{{ item.product.price }}">
+                                                {{ item.product.name }} (Доступно: {{ item.quantity }}) — {{ item.product.price }} грн.
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <input type="number" name="quantity[]" class="form-control quantity-input" placeholder="Кількість" min="1" required oninput="calculateOrderTotal()">
+                                </div>
+                                <div class="col-md-2 text-end">
+                                    <!-- Кнопка видалення рядка (для першого рядка прихована за замовчуванням через d-none, щоб не видалити єдине поле) -->
+                                    <button type="button" class="btn btn-danger btn-block w-100 delete-row-btn d-none" onclick="removeProductRow(this)">✕</button>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary btn-sm mt-2" onclick="addProductRow()">+ Додати рядок</button>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Загальна сума (грн):</label>
+                        <input type="number" name="total_amount" id="modal_total_amount" value="0" readonly class="form-control bg-light">
+                        <small class="text-muted">Розраховується автоматично на основі доданих товарів.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
+                    <button type="submit" name="add_order" class="btn btn-warning">Підтвердити</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// 1. Додавання нового рядка товарів
+function addProductRow() {
+    const container = document.getElementById('products-container');
+    const firstRow = container.querySelector('.product-row');
+    const newRow = firstRow.cloneNode(true);
+    
+    // Очищаємо заповнені поля у копії
+    newRow.querySelector('select').value = '';
+    newRow.querySelector('input').value = '';
+    
+    // Робимо кнопку видалення активною та видимою у новому рядку
+    const deleteBtn = newRow.querySelector('.delete-row-btn');
+    if (deleteBtn) {
+        deleteBtn.classList.remove('d-none');
+    }
+    
+    container.appendChild(newRow);
+    calculateOrderTotal();
+}
+
+// 2. Видалення рядка товарів
+function removeProductRow(button) {
+    const row = button.closest('.product-row');
+    row.remove();
+    calculateOrderTotal(); // Перераховуємо суму після видалення позиції
+}
+
+// 3. Динамічний підрахунок загальної суми
+function calculateOrderTotal() {
+    let total = 0;
+    const rows = document.querySelectorAll('.product-row');
+    
+    rows.forEach(row => {
+        const select = row.querySelector('.product-select');
+        const quantityInput = row.querySelector('.quantity-input');
+        
+        const selectedOption = select.options[select.selectedIndex];
+        const price = parseFloat(selectedOption.getAttribute('data-price')) || 0;
+        const quantity = parseInt(quantityInput.value) || 0;
+        
+        total += price * quantity;
+    });
+    
+    document.getElementById('modal_total_amount').value = total.toFixed(2);
+}
+</script>
+{% endif %}
+
+{% if is_stafflog %}
+<!-- ДОДАТИ НА СКЛАД -->
+<div class="modal fade" id="addInventoryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST">
+                {% csrf_token %}
+                <div class="modal-header bg-success text-white"><h5>Додати товар на склад</h5></div>
+                <div class="modal-body">
+                    <input type="text" name="prod_name" class="form-control mb-2" placeholder="Назва рослини/товару" required>
+                    <input type="text" name="category" class="form-control mb-2" placeholder="Категорія">
+                    <input type="number" name="price" class="form-control mb-2" placeholder="Ціна продажу (грн)" step="0.01" required>
+                    <input type="text" name="supplier" class="form-control mb-2" placeholder="Постачальник">
+                    <input type="number" name="quantity" class="form-control mb-2" placeholder="Кількість" required>
+                    <input type="number" name="min_qty" class="form-control mb-2" placeholder="Мінімальний залишок (ліміт)">
+                    <input type="text" name="location" class="form-control mb-2" placeholder="Місце зберігання (напр. Сектор А)">
+                    <input type="date" name="arrival_date" class="form-control mb-2">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
+                    <button type="submit" name="add_inventory" class="btn btn-success">Додати</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
