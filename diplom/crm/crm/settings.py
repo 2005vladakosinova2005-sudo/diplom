@@ -76,15 +76,13 @@ WSGI_APPLICATION = 'crm.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+import dj_database_url
+
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'storagedipl',
-        'USER': 'postgres',
-        'PASSWORD': 'Vlada1906005',
-        'HOST': 'localhost',
-        'PORT': '5432'
-    }
+    'default': dj_database_url.config(
+        default='postgresql://postgres:postgres@localhost:5432/crm',
+        conn_max_age=600
+    )
 }
 
 
